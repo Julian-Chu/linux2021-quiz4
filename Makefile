@@ -1,5 +1,5 @@
 run:
-	gcc  threadpool.c main.c -lpthread -lm -o main
+	gcc  threadpool.c main.c -lpthread -lm -g -o main
 
 test:
 	gcc  threadpool.c perf_test.c -lpthread -lm -o perf_test
