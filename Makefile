@@ -10,3 +10,6 @@ test-plot: test
 	gnuplot ./scripts/perf_test.gp
 	eog perf_test.png
 
+clean:
+	rm main perf_test perf_test.png perf_test_data 2>/dev/null
+
