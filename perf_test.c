@@ -44,8 +44,8 @@ int main()
     long long elapsed_time[size];
     double bpp[size];
     tpool_t pool = tpool_create(4);
-    clock_gettime(CLOCK_MONOTONIC, &t_start);
     for(int i = 0; i < size;i++){
+        clock_gettime(CLOCK_MONOTONIC, &t_start);
         bpp[i] = run(pool);
         clock_gettime(CLOCK_MONOTONIC, &t_end);
         elapsed_time[i] = (t_end.tv_sec * NANOSEC + t_end.tv_nsec) -
