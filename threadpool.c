@@ -11,6 +11,7 @@ struct __tpool_future {
 
 struct __threadpool {
     size_t count;
+    size_t jobid;
     pthread_t *workers;
     jobqueue_t *jobqueue;
 };
@@ -105,7 +106,7 @@ static void jobqueue_destroy(jobqueue_t *jobqueue)
 
     pthread_mutex_destroy(&jobqueue->rwlock);
     pthread_cond_destroy(&jobqueue->cond_nonempty);
-    free(jobqueue);
+    /* free(jobqueue); */
 }
 
 static void __jobqueue_fetch_cleanup(void *arg)
@@ -179,26 +180,39 @@ static void *jobqueue_fetch(void *queue)
 
 struct __threadpool *tpool_create(size_t count)
 {
-    jobqueue_t *jobqueue = jobqueue_create();
     struct __threadpool *pool = malloc(sizeof(struct __threadpool));
-    if (!jobqueue || !pool) {
-        if (jobqueue)
-            jobqueue_destroy(jobqueue);
+    if (!pool){
         free(pool);
         return NULL;
     }
 
-    pool->count = count, pool->jobqueue = jobqueue;
+    pool->count = count;
+    pool->jobid = 0;
+
+    if(!(pool->jobqueue = malloc(count * sizeof(jobqueue_t)))){
+        free(pool);
+        return NULL;
+    }
+
+    for(int i = 0; i < count; i++){
+        jobqueue_t *jobqueue = &pool->jobqueue[i];
+        jobqueue->head = jobqueue->tail = NULL;
+        pthread_cond_init(&jobqueue->cond_nonempty, NULL);
+        pthread_mutex_init(&jobqueue->rwlock, NULL);
+    }
+
     if ((pool->workers = malloc(count * sizeof(pthread_t)))) {
         for (int i = 0; i < count; i++) {
-            if (pthread_create(&pool->workers[i], NULL, jobqueue_fetch,
-                               (void *) jobqueue)) {
+            if (pthread_create(&pool->workers[i], NULL, jobqueue_fetch, (void *) &pool->jobqueue[i])) {
                 for (int j = 0; j < i; j++)
                     pthread_cancel(pool->workers[j]);
                 for (int j = 0; j < i; j++)
                     pthread_join(pool->workers[j], NULL);
                 free(pool->workers);
-                jobqueue_destroy(jobqueue);
+                for(int j=0;j<count;j++){
+                    jobqueue_destroy(&pool->jobqueue[j]);
+                }
+                free(pool->jobqueue);
                 free(pool);
                 return NULL;
             }
@@ -206,7 +220,11 @@ struct __threadpool *tpool_create(size_t count)
         return pool;
     }
 
-    jobqueue_destroy(jobqueue);
+
+    for(int j=0;j<count;j++){
+        jobqueue_destroy(&pool->jobqueue[j]);
+    }
+    free(pool->jobqueue);
     free(pool);
     return NULL;
 }
@@ -215,10 +233,11 @@ struct __tpool_future *tpool_apply(struct __threadpool *pool,
                                    void *(*func)(void *),
                                    void *arg)
 {
-    jobqueue_t *jobqueue = pool->jobqueue;
     threadtask_t *new_tail = malloc(sizeof(threadtask_t));
     struct __tpool_future *future = tpool_future_create();
     if (new_tail && future) {
+        size_t jobqueue_id = pool->jobid % pool->count;
+        jobqueue_t *jobqueue = &pool->jobqueue[jobqueue_id];
         new_tail->func = func, new_tail->arg = arg, new_tail->future = future;
         pthread_mutex_lock(&jobqueue->rwlock);
         if (jobqueue->head) {
@@ -247,7 +266,10 @@ int tpool_join(struct __threadpool *pool)
     for (int i = 0; i < num_threads; i++)
         pthread_join(pool->workers[i], NULL);
     free(pool->workers);
-    jobqueue_destroy(pool->jobqueue);
+    for(int j=0;j<num_threads;j++){
+        jobqueue_destroy(&pool->jobqueue[j]);
+    }
+    free(pool->jobqueue);
     free(pool);
     return 0;
 }
