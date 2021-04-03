@@ -11,7 +11,7 @@ struct __tpool_future {
 
 struct __threadpool {
     size_t count;
-    size_t jobid;
+    size_t cur_jobqueue_id;
     pthread_t *workers;
     jobqueue_t *jobqueue;
 };
@@ -187,7 +187,7 @@ struct __threadpool *tpool_create(size_t count)
     }
 
     pool->count = count;
-    pool->jobid = 0;
+    pool->cur_jobqueue_id = 0;
 
     if(!(pool->jobqueue = malloc(count * sizeof(jobqueue_t)))){
         free(pool);
@@ -236,7 +236,8 @@ struct __tpool_future *tpool_apply(struct __threadpool *pool,
     threadtask_t *new_tail = malloc(sizeof(threadtask_t));
     struct __tpool_future *future = tpool_future_create();
     if (new_tail && future) {
-        size_t jobqueue_id = pool->jobid % pool->count;
+        size_t jobqueue_id = pool->cur_jobqueue_id;
+        pool->cur_jobqueue_id = (jobqueue_id+1) % pool->count;
         jobqueue_t *jobqueue = &pool->jobqueue[jobqueue_id];
         new_tail->func = func, new_tail->arg = arg, new_tail->future = future;
         pthread_mutex_lock(&jobqueue->rwlock);
@@ -261,10 +262,29 @@ struct __tpool_future *tpool_apply(struct __threadpool *pool,
 int tpool_join(struct __threadpool *pool)
 {
     size_t num_threads = pool->count;
-    for (int i = 0; i < num_threads; i++)
+
+    for (int i = 0; i < num_threads; i++){
+        /* threadtask_t *new_tail = malloc(sizeof(threadtask_t)); */
+        /* struct __tpool_future *future = tpool_future_create(); */
+        /* if (new_tail && future) { */
+        /*     jobqueue_t *jobqueue = &pool->jobqueue[i]; */
+        /*     new_tail->func = NULL, new_tail->arg = NULL, new_tail->future = future; */
+        /*     pthread_mutex_lock(&jobqueue->rwlock); */
+        /*     if (jobqueue->head) { */
+        /*         jobqueue->tail->next = new_tail; */
+        /*         jobqueue->tail = jobqueue->tail->next; */
+        /*     } else { */
+        /*         jobqueue->head = jobqueue->tail = new_tail; */
+        /*         pthread_cond_broadcast(&jobqueue->cond_nonempty); */
+        /*     } */
+        /*     pthread_mutex_unlock(&jobqueue->rwlock); */
+        /* } */
         tpool_apply(pool, NULL, NULL);
-    for (int i = 0; i < num_threads; i++)
-        pthread_join(pool->workers[i], NULL);
+    }
+
+    for (int i = 0; i < num_threads; i++){
+        int code = pthread_join(pool->workers[i], NULL);
+    }
     free(pool->workers);
     for(int j=0;j<num_threads;j++){
         jobqueue_destroy(&pool->jobqueue[j]);
